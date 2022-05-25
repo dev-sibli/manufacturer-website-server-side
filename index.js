@@ -19,6 +19,7 @@ async function run() {
         await client.connect()
         const toolCollection = client.db('jantrik-tools').collection('tools');
         const userCollection = client.db('jantrik-tools').collection('users');
+        const reviewCollection = client.db('jantrik-tools').collection('reviews');
 
         app.get('/tool', async (req, res) => {
             const query = {};
@@ -26,6 +27,23 @@ async function run() {
             const tools = await cursor.toArray();
             res.send(tools);
         });
+        app.get('/review', async (req, res) => {
+            const query = {};
+            const cursor = reviewCollection.find(query);
+            const reviews = await cursor.toArray();
+            res.send(reviews);
+        });
+
+        app.post('/review', async (req, res) => {
+            const review = req.body;
+            const query = { rating: review.rating, about: review.about }
+            const exists = await reviewCollection.findOne(query);
+            if (exists) {
+                return res.send({ success: false, review: exists })
+            }
+            const result = await reviewCollection.insertOne(review);
+            return res.send({ success: true, result });
+        })
 
 
         app.put('/user/:email', async (req, res) => {
@@ -40,6 +58,8 @@ async function run() {
             const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
             res.send({ result, token });
         })
+
+
     }
     finally {
 
