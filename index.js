@@ -36,12 +36,31 @@ async function run() {
         const userCollection = client.db('jantrik-tools').collection('users');
         const reviewCollection = client.db('jantrik-tools').collection('reviews');
 
+        const verifyAdmin = async (req, res, next) => {
+            const requester = req.decoded.email;
+            const requesterAccount = await userCollection.findOne({ email: requester });
+            if (requesterAccount.role === 'admin') {
+                next();
+            }
+            else {
+                res.status(403).send({ message: 'forbidden' });
+            }
+        }
+
         app.get('/tool', async (req, res) => {
             const query = {};
             const cursor = toolCollection.find(query);
             const tools = await cursor.toArray();
             res.send(tools);
         });
+
+        app.get('/tool/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: ObjectId(id) };
+            const tools = await toolCollection.findOne(query);
+            res.send(tools);
+        });
+
         app.get('/review', async (req, res) => {
             const query = {};
             const cursor = reviewCollection.find(query);
@@ -51,13 +70,8 @@ async function run() {
 
         app.post('/review', async (req, res) => {
             const review = req.body;
-            const query = { rating: review.rating, about: review.about }
-            const exists = await reviewCollection.findOne(query);
-            if (exists) {
-                return res.send({ success: false, review: exists })
-            }
             const result = await reviewCollection.insertOne(review);
-            return res.send({ success: true, result });
+            res.send(result);
         })
 
         app.get('/user', verifyJWT, async (req, res) => {
@@ -65,7 +79,14 @@ async function run() {
             res.send(users);
         })
 
-        app.put('/user/admin/:email', async (req, res) => {
+        app.get('/admin/:email', async (req, res) => {
+            const email = req.params.email;
+            const user = await userCollection.findOne({ email: email });
+            const isAdmin = user.role === 'admin';
+            res.send({ admin: isAdmin })
+        })
+
+        app.put('/user/admin/:email', verifyAdmin, async (req, res) => {
             const email = req.params.email;
             const filter = { email: email };
             const updateDoc = {
@@ -84,7 +105,7 @@ async function run() {
                 $set: user,
             };
             const result = await userCollection.updateOne(filter, updateDoc, options);
-            const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
+            const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '2h' })
             res.send({ result, token });
         })
 
