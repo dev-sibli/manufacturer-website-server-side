@@ -35,6 +35,7 @@ async function run() {
         const toolCollection = client.db('jantrik-tools').collection('tools');
         const userCollection = client.db('jantrik-tools').collection('users');
         const reviewCollection = client.db('jantrik-tools').collection('reviews');
+        const orderCollection = client.db('jantrik-tools').collection('orders');
 
         const verifyAdmin = async (req, res, next) => {
             const requester = req.decoded.email;
@@ -53,6 +54,26 @@ async function run() {
             const tools = await cursor.toArray();
             res.send(tools);
         });
+
+        app.get('/order', async (req, res) => {
+            const query = {};
+            const cursor = orderCollection.find(query);
+            const orders = await cursor.toArray();
+            res.send(orders);
+        });
+
+        app.get('/order/:email', verifyJWT, async (req, res) => {
+            const email = req.params.email;
+            const order = await userCollection.findOne({ email: email });
+            const orders = await orderCollection.findOne(order);
+            res.send(orders);
+        });
+
+        app.post('/order', async (req, res) => {
+            const order = req.body;
+            const result = await orderCollection.insertOne(order);
+            res.send(result);
+        })
 
         app.get('/tool/:id', async (req, res) => {
             const id = req.params.id;
@@ -74,19 +95,15 @@ async function run() {
             res.send(result);
         })
 
-        app.get('/user', verifyJWT, async (req, res) => {
-            const users = await userCollection.find().toArray();
-            res.send(users);
-        })
 
-        app.get('/admin/:email', async (req, res) => {
+        app.get('admin/:email', verifyJWT, async (req, res) => {
             const email = req.params.email;
             const user = await userCollection.findOne({ email: email });
             const isAdmin = user.role === 'admin';
             res.send({ admin: isAdmin })
         })
 
-        app.put('/user/admin/:email', verifyAdmin, async (req, res) => {
+        app.put('/user/admin/:email', verifyJWT, async (req, res) => {
             const email = req.params.email;
             const filter = { email: email };
             const updateDoc = {
@@ -94,6 +111,29 @@ async function run() {
             };
             const result = await userCollection.updateOne(filter, updateDoc);
             res.send(result);
+        })
+
+        app.put('/user/admin', async (req, res) => {
+            const user = req.body;
+            const requester = req.decodedEmail;
+            if (requester) {
+                const requesterAccount = await userCollection.findOne({ email: requester });
+                if (requesterAccount.role === 'admin') {
+                    const filter = { email: user.email };
+                    const updateDoc = { $set: { role: 'admin' } };
+                    const result = await userCollection.updateOne(filter, updateDoc);
+                    res.json(result);
+                }
+            }
+            else {
+                res.status(403).json({ message: 'you do not have access to make admin.' })
+            }
+
+        })
+
+        app.get('/user', async (req, res) => {
+            const users = await userCollection.find().toArray();
+            res.send(users);
         })
 
         app.put('/user/:email', async (req, res) => {
@@ -105,7 +145,7 @@ async function run() {
                 $set: user,
             };
             const result = await userCollection.updateOne(filter, updateDoc, options);
-            const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '2h' })
+            const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
             res.send({ result, token });
         })
 
