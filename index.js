@@ -57,6 +57,12 @@ async function run() {
             res.send(tools);
         });
 
+        app.post('/tool', async (req, res) => {
+            const tool = req.body;
+            const result = await toolCollection.insertOne(tool);
+            res.send(result);
+        });
+
         app.post('/create-payment-intent', verifyJWT, async (req, res) => {
             const order = req.body;
             const price = order.price;
@@ -113,7 +119,7 @@ async function run() {
             res.json(orders);
         })
 
-        app.get('/user/:email', verifyJWT, async (req, res) => {
+        app.get('/myProfile', async (req, res) => {
             const email = req.query.email;
             const query = { email: email }
             const cursor = userCollection.find(query);
@@ -142,15 +148,14 @@ async function run() {
             res.send(result);
         })
 
-
-        app.get('/admin/:email', verifyJWT, async (req, res) => {
+        app.get('/admin/:email', async (req, res) => {
             const email = req.params.email;
             const user = await userCollection.findOne({ email: email });
             const isAdmin = user.role === 'admin';
             res.send({ admin: isAdmin })
         })
 
-        app.put('/user/admin/:email', verifyJWT, async (req, res) => {
+        app.put('/user/admin/:email', verifyJWT, verifyAdmin, async (req, res) => {
             const email = req.params.email;
             const filter = { email: email };
             const updateDoc = {
@@ -160,27 +165,21 @@ async function run() {
             res.send(result);
         })
 
-        app.put('/user/admin', verifyJWT, verifyAdmin, async (req, res) => {
-            const user = req.body;
-            const requester = req.decodedEmail;
-            if (requester) {
-                const requesterAccount = await userCollection.findOne({ email: requester });
-                if (requesterAccount.role === 'admin') {
-                    const filter = { email: user.email };
-                    const updateDoc = { $set: { role: 'admin' } };
-                    const result = await userCollection.updateOne(filter, updateDoc);
-                    res.json(result);
-                }
-            }
-            else {
-                res.status(403).json({ message: 'you do not have access to make admin.' })
-            }
-
-        })
-
         app.get('/user', verifyJWT, async (req, res) => {
             const users = await userCollection.find().toArray();
             res.send(users);
+        })
+
+        app.patch('/user', verifyJWT, async (req, res) => {
+            const email = req.params.email;
+            const user = req.body;
+            const filter = { email: email };
+            const options = { upsert: true };
+            const updateDoc = {
+                $set: user,
+            };
+            const result = await userCollection.updateOne(filter, updateDoc, options);
+            res.send(result);
         })
 
         app.put('/user/:email', async (req, res) => {
