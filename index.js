@@ -3,6 +3,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -36,6 +37,7 @@ async function run() {
         const userCollection = client.db('jantrik-tools').collection('users');
         const reviewCollection = client.db('jantrik-tools').collection('reviews');
         const orderCollection = client.db('jantrik-tools').collection('orders');
+        const paymentCollection = client.db('jantrik-tools').collection('payments');
 
         const verifyAdmin = async (req, res, next) => {
             const requester = req.decoded.email;
@@ -55,25 +57,70 @@ async function run() {
             res.send(tools);
         });
 
-        app.get('/order', async (req, res) => {
+        app.post('/create-payment-intent', verifyJWT, async (req, res) => {
+            const order = req.body;
+            const price = order.price;
+            const amount = price * 100;
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: 'usd',
+                payment_method_types: ['card']
+            });
+            res.send({ clientSecret: paymentIntent.client_secret })
+        })
+
+        app.get('/order', verifyJWT, async (req, res) => {
             const query = {};
             const cursor = orderCollection.find(query);
             const orders = await cursor.toArray();
             res.send(orders);
         });
 
-        app.get('/order/:email', verifyJWT, async (req, res) => {
-            const email = req.params.email;
-            const order = await userCollection.findOne({ email: email });
-            const orders = await orderCollection.findOne(order);
+        app.get('/order/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: ObjectId(id) };
+            const orders = await orderCollection.findOne(query);
             res.send(orders);
-        });
+        })
 
         app.post('/order', async (req, res) => {
             const order = req.body;
             const result = await orderCollection.insertOne(order);
             res.send(result);
+
         })
+
+        app.patch('/order/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const payment = req.body;
+            const filter = { _id: ObjectId(id) };
+            const updatedDoc = {
+                $set: {
+                    paid: true,
+                    transactionId: payment.transactionId
+                }
+            }
+            const result = await paymentCollection.insertOne(payment);
+            const updatedOrder = await orderCollection.updateOne(filter, updatedDoc);
+            res.send(updatedOrder);
+        })
+
+        app.get('/myOrder', verifyJWT, async (req, res) => {
+            const email = req.query.email;
+            const query = { email: email }
+            const cursor = orderCollection.find(query);
+            const orders = await cursor.toArray();
+            res.json(orders);
+        })
+
+        app.get('/user/:email', verifyJWT, async (req, res) => {
+            const email = req.query.email;
+            const query = { email: email }
+            const cursor = userCollection.find(query);
+            const users = await cursor.toArray();
+            res.json(users);
+        })
+
 
         app.get('/tool/:id', async (req, res) => {
             const id = req.params.id;
@@ -96,7 +143,7 @@ async function run() {
         })
 
 
-        app.get('admin/:email', verifyJWT, async (req, res) => {
+        app.get('/admin/:email', verifyJWT, async (req, res) => {
             const email = req.params.email;
             const user = await userCollection.findOne({ email: email });
             const isAdmin = user.role === 'admin';
@@ -113,7 +160,7 @@ async function run() {
             res.send(result);
         })
 
-        app.put('/user/admin', async (req, res) => {
+        app.put('/user/admin', verifyJWT, verifyAdmin, async (req, res) => {
             const user = req.body;
             const requester = req.decodedEmail;
             if (requester) {
@@ -131,7 +178,7 @@ async function run() {
 
         })
 
-        app.get('/user', async (req, res) => {
+        app.get('/user', verifyJWT, async (req, res) => {
             const users = await userCollection.find().toArray();
             res.send(users);
         })
